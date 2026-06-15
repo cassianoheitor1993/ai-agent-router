@@ -1,0 +1,17 @@
+node_modules/
+.env
+*.log
+.DS_Store
+output/
+docs/
+prisma/
+src/generated.ts
+src/modules/
+src/controllers/
+src/services/
+src/middleware/
+src/pages/
+src/components/
+src/hooks/
+src/dto/
+src/types/
