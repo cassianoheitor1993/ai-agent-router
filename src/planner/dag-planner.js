@@ -134,11 +134,13 @@ OUTPUT FORMAT (STRICT — follow exactly):
 
   if (context.stack?.primary) {
     const s = context.stack.primary;
-    userPrompt += `## TECH STACK\n`;
+    userPrompt += `## TECH STACK (MUST USE — DO NOT SUBSTITUTE)\n`;
     if (s.backend) userPrompt += `- Backend: ${s.backend}\n`;
     if (s.frontend) userPrompt += `- Frontend: ${s.frontend}\n`;
     if (s.mobile) userPrompt += `- Mobile: ${s.mobile}\n`;
     if (s.database) userPrompt += `- Database: ${s.database}\n`;
+    if (s.orm) userPrompt += `- ORM: ${s.orm}\n`;
+    if (s.queue) userPrompt += `- Queue: ${s.queue}\n`;
     userPrompt += `- Language: ${s.language || "TypeScript"}\n\n`;
   }
 
@@ -181,6 +183,8 @@ OUTPUT FORMAT (STRICT — follow exactly):
 
       if (parsed.steps.length > 0) {
         const steps = planStepsToDAG(parsed.steps);
+        postProcessPlan(steps);
+
         const parallelGroups = computeParallelGroups(steps);
 
         process.stderr.write(
@@ -218,6 +222,82 @@ OUTPUT FORMAT (STRICT — follow exactly):
   process.stderr.write(`\r  ${chalk.yellow("⚠")} AI Planning        ${chalk.gray(`[fallback]`)}  using template-based plan\n`);
 
   return null;
+}
+
+const MODEL_RULES = {
+  system_design: "opencode/deepseek-v4-pro",
+  architecture: "opencode/deepseek-v4-pro",
+  backend: "opencode/deepseek-v4-flash",
+  frontend: "opencode/deepseek-v4-flash",
+  mobile: "opencode/deepseek-v4-flash",
+  database: "opencode/deepseek-v4-flash",
+  testing: "opencode/deepseek-v4-flash",
+  project_scaffold: "opencode/deepseek-v4-flash",
+  review: "opencode/glm-5",
+  docs: "opencode/kimi-k2.6",
+};
+
+function postProcessPlan(steps) {
+  for (const step of steps) {
+    const expected = MODEL_RULES[step.type];
+    if (expected && step.model !== expected) {
+      const currentModel = step.model?.split("/").pop();
+      step.model = expected;
+    }
+  }
+
+  const hasReview = steps.some((s) => s.type === "review");
+  const hasDocs = steps.some((s) => s.type === "docs");
+
+  if (!hasReview && steps.length > 1) {
+    const codeSteps = steps.filter((s) =>
+      ["backend", "frontend", "mobile", "database"].includes(s.type)
+    );
+    const deps = [
+      ...new Set(
+        ["backend", "mobile", "database", "frontend"]
+          .map((cat) => codeSteps.filter((s) => s.type === cat).pop())
+          .filter(Boolean)
+          .map((s) => s.id)
+      ),
+    ];
+
+    const newId = `step_${steps.length + 1}`;
+
+    steps.push({
+      id: newId,
+      type: "review",
+      target: "quality",
+      description: "Review: code quality and security audit of all generated files",
+      dependencies: deps,
+      model: "opencode/glm-5",
+      status: "pending",
+      output: null,
+      artifacts: [],
+      error: null,
+      files: [],
+    });
+  }
+
+  if (!hasDocs) {
+    const reviewStep = steps.find((s) => s.type === "review");
+    const deps = reviewStep ? [reviewStep.id] : [];
+    const newId = `step_${steps.length + 1}`;
+
+    steps.push({
+      id: newId,
+      type: "docs",
+      target: "documentation",
+      description: "Docs: generate README, API documentation, and architecture docs",
+      dependencies: deps,
+      model: "opencode/kimi-k2.6",
+      status: "pending",
+      output: null,
+      artifacts: [],
+      error: null,
+      files: [],
+    });
+  }
 }
 
 export { computeParallelGroups };

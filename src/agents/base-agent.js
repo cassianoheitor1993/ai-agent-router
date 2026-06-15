@@ -5,6 +5,8 @@ import { getConfig, getMaxTokensForStep } from "../utils/config.js";
 import { step as logStep, debug, warn, info } from "../utils/logger.js";
 import { writeOutputFile, extractCodeBlocks, extractEntityName } from "../utils/file-utils.js";
 import chalk from "chalk";
+import { existsSync } from "fs";
+import { resolve } from "path";
 
 const MAX_CONTINUE_RETRIES = 2;
 
@@ -292,13 +294,18 @@ export class BaseAgent {
       }
     }
 
-    prompt += `\nCRITICAL: Every code block MUST have a file path marker. Format exactly:
-// file: path/to/ComponentName.ext
-\`\`\`lang
-code
-\`\`\`
+    const isMonorepo = existsSync(resolve(config.projectDir, "packages")) ||
+                       existsSync(resolve(config.projectDir, "apps"));
 
-Do NOT output code blocks without a preceding // file: marker. Use descriptive kebab-case file names based on the class/function name.`;
+    prompt += `\nCRITICAL FILE OUTPUT RULES:
+1. Every code block MUST have a file path marker: // file: path/to/file.ext
+${isMonorepo ? `2. MONOREPO DETECTED: This project has a packages/ structure. ALL file paths MUST use the package prefix:
+   - Backend code: packages/api/src/path/to/file.ts
+   - Mobile code: packages/mobile/src/path/to/Screen.tsx
+   - Frontend code: packages/web/src/path/to/Component.tsx
+   - Config files: packages/api/package.json, packages/api/tsconfig.json` : `2. Use standard project paths (src/controllers/, src/services/, etc.)`}
+3. Do NOT output code blocks without a preceding // file: marker.
+4. Use descriptive kebab-case file names based on the class/function name.`;
 
     return prompt;
   }
@@ -313,6 +320,15 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
     for (const block of blocks) {
       if (block.code.length === 0) continue;
 
+      if (block.language === "json" && block.code.length > 5) {
+        try {
+          JSON.parse(block.code);
+        } catch {
+          warn(`Skipping invalid JSON in block for ${block.filePath || "unknown"}`);
+          continue;
+        }
+      }
+
       let path = block.filePath;
 
       if (!path) {
@@ -321,6 +337,8 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
         if (missedMarkers <= 3) {
           warn(`Missing // file: marker for block (${block.language}), guessed: ${path}`);
         }
+      } else if (path.startsWith("src/")) {
+        path = this.tryPrefixMonorepoPath(path);
       }
 
       if (!path) continue;
@@ -348,15 +366,42 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
     return artifacts;
   }
 
+  tryPrefixMonorepoPath(path) {
+    if (!path.startsWith("src/")) return path;
+
+    const config = getConfig();
+    const packagesDir = resolve(config.projectDir, "packages");
+
+    try {
+      if (existsSync(packagesDir)) {
+        const apiDir = resolve(packagesDir, "api", "src");
+        const webDir = resolve(packagesDir, "web", "src");
+        const mobileDir = resolve(packagesDir, "mobile", "src");
+
+        if (existsSync(apiDir) && (path.includes("controller") || path.includes("service") || path.includes("middleware") || path.includes("module") || path.includes("dto"))) {
+          return path.replace("src/", "packages/api/src/");
+        }
+        if (existsSync(webDir) && (path.includes("component") || path.includes("page") || path.includes("hook") || path.includes("tsx"))) {
+          return path.replace("src/", "packages/web/src/");
+        }
+        if (existsSync(mobileDir)) {
+          return path.replace("src/", "packages/mobile/src/");
+        }
+      }
+    } catch {}
+
+    return path;
+  }
+
   guessFilePath(block, stepConfig) {
     const firstLine = block.code.split("\n")[0]?.trim() || "";
     const entityName = extractEntityName(block.code, block.language);
 
-    if (block.language === "prisma") return "prisma/schema.prisma";
-    if (block.language === "sql") return `db/migrations/migration_${Date.now()}.sql`;
+    if (block.language === "prisma") return this.monorepoPrefix("prisma/schema.prisma", "database");
+    if (block.language === "sql") return this.monorepoPrefix(`db/migrations/migration_${Date.now()}.sql`, "database");
     if (block.language === "json") {
-      if (firstLine.includes("\"name\"") && firstLine.includes("\"version\"")) return "package.json";
-      if (firstLine.includes("\"compilerOptions\"")) return "tsconfig.json";
+      if (firstLine.includes("\"name\"") && firstLine.includes("\"version\"")) return this.monorepoPrefix("package.json", "project_scaffold");
+      if (firstLine.includes("\"compilerOptions\"")) return this.monorepoPrefix("tsconfig.json", "project_scaffold");
       return `output/config_${Date.now()}.json`;
     }
 
@@ -365,9 +410,11 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
       case "architecture":
         return "docs/architecture.md";
       case "backend":
-        return this.guessBackendPath(firstLine, entityName);
+        return this.monorepoPrefix(this.guessBackendPath(firstLine, entityName), "backend");
       case "frontend":
-        return this.guessFrontendPath(firstLine, entityName);
+        return this.monorepoPrefix(this.guessFrontendPath(firstLine, entityName), "frontend");
+      case "mobile":
+        return this.guessMobilePath(firstLine, entityName);
       case "docs":
         if (firstLine.toLowerCase().includes("readme")) return "README.md";
         if (firstLine.toLowerCase().includes("api")) return "docs/API.md";
@@ -376,6 +423,32 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
       default:
         return `output/step_${stepConfig.id}.txt`;
     }
+  }
+
+  monorepoPrefix(path, stepType) {
+    if (!path) return path;
+    const config = getConfig();
+
+    try {
+      if (existsSync(resolve(config.projectDir, "packages"))) {
+        const apiDir = resolve(config.projectDir, "packages", "api");
+        const mobileDir = resolve(config.projectDir, "packages", "mobile");
+        const webDir = resolve(config.projectDir, "packages", "web");
+
+        if (existsSync(apiDir) && (stepType === "backend" || stepType === "database" || stepType === "project_scaffold")) {
+          if (path.startsWith("src/")) return path.replace("src/", "packages/api/src/");
+          if (path === "package.json" || path === "tsconfig.json" || path.startsWith("prisma/")) return `packages/api/${path}`;
+        }
+        if (existsSync(mobileDir) && stepType === "mobile") {
+          if (path.startsWith("src/")) return path.replace("src/", "packages/mobile/src/");
+        }
+        if (existsSync(webDir) && stepType === "frontend") {
+          if (path.startsWith("src/")) return path.replace("src/", "packages/web/src/");
+        }
+      }
+    } catch {}
+
+    return path;
   }
 
   guessBackendPath(firstLine, entityName) {
@@ -414,6 +487,22 @@ Do NOT output code blocks without a preceding // file: marker. Use descriptive k
     if (firstLine.includes("middleware"))
       return "src/middleware/generated.middleware.ts";
     return "src/generated.ts";
+  }
+
+  guessMobilePath(firstLine, entityName) {
+    if (entityName) {
+      const name = entityName;
+      if (firstLine.toLowerCase().includes("screen"))
+        return this.monorepoPrefix(`src/screens/${name}.tsx`, "mobile");
+      if (firstLine.toLowerCase().includes("navigation") || firstLine.toLowerCase().includes("navigator"))
+        return this.monorepoPrefix(`src/navigation/${name}.tsx`, "mobile");
+      if (firstLine.toLowerCase().includes("component"))
+        return this.monorepoPrefix(`src/components/${name}.tsx`, "mobile");
+      if (firstLine.toLowerCase().includes("service") || firstLine.toLowerCase().includes("api"))
+        return this.monorepoPrefix(`src/services/${name}.ts`, "mobile");
+      return this.monorepoPrefix(`src/${name}.tsx`, "mobile");
+    }
+    return this.monorepoPrefix("src/screens/GeneratedScreen.tsx", "mobile");
   }
 
   guessFrontendPath(firstLine, entityName) {

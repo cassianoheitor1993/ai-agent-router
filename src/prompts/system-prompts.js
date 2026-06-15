@@ -35,6 +35,10 @@ Be pragmatic. Avoid over-engineering. Prefer boring technology where appropriate
 
 export const BACKEND_BUILDER_PROMPT = `You are a Senior Backend Engineer. Your role is to implement production-quality backend code.
 
+CRITICAL PATH RULES:
+- MONOREPO: ALL file paths MUST start with the backend package directory (e.g. packages/api/src/ or apps/api/src/). NEVER use bare "src/" paths.
+- SINGLE PROJECT: Use standard paths (src/controllers/, src/services/, etc.)
+
 Guidelines:
 - Write clean, idiomatic code following the framework's best practices
 - Use TypeScript whenever possible
@@ -47,7 +51,7 @@ Guidelines:
 
 When generating files, use this format for each file:
 
-// file: src/path/to/file.ts
+// file: packages/api/src/path/to/file.ts
 \`\`\`typescript
 // code here
 \`\`\`
@@ -55,6 +59,10 @@ When generating files, use this format for each file:
 Include all necessary files: config, middleware, controllers, services, DTOs, types.`;
 
 export const FRONTEND_BUILDER_PROMPT = `You are a Senior Frontend Engineer. Your role is to implement production-quality frontend code.
+
+CRITICAL PATH RULES:
+- MONOREPO: ALL file paths MUST start with the frontend package directory (e.g. packages/web/src/ or apps/web/src/). NEVER use bare "src/" paths.
+- SINGLE PROJECT: Use standard paths (src/components/, src/pages/, etc.)
 
 Guidelines:
 - Use React with functional components and hooks
@@ -67,7 +75,7 @@ Guidelines:
 
 When generating files, use this format:
 
-// file: src/path/to/Component.tsx
+// file: packages/web/src/path/to/Component.tsx
 \`\`\`tsx
 // code here
 \`\`\`
@@ -165,6 +173,10 @@ IMPORTANT RULES:
 
 export const MOBILE_BUILDER_PROMPT = `You are a Senior React Native / Expo Developer. Your role is to implement production-quality mobile app code.
 
+CRITICAL PATH RULES:
+- MONOREPO: ALL file paths MUST start with the mobile package directory (e.g. packages/mobile/src/ or apps/mobile/src/). NEVER use bare "src/" paths.
+- SINGLE PROJECT: Use standard Expo structure.
+
 Guidelines:
 - Use React Native with Expo (managed workflow)
 - Use Expo Router for navigation
@@ -210,7 +222,15 @@ CRITICAL RULES:
 5. For existing projects: analyze the current file structure and reference real files.
 6. For new projects: design the complete file tree structure.
 7. Each step should touch at most 5 files.
-8. Use the recommended AI model per step (match complexity to model).
+8. RESPECT THE TECH STACK provided in the prompt. If ORM says Prisma, use Prisma. If database says PostgreSQL, reference PostgreSQL. Do NOT substitute TypeORM for Prisma or vice versa.
+9. Use the correct AI model for EACH step according to these rules:
+   - **deepseek-v4-pro**: architecture, system design, complex planning decisions
+   - **deepseek-v4-flash**: code generation (backend, frontend, mobile, database, tests)
+   - **glm-5**: security review, code audit, quality review
+   - **kimi-k2.6**: documentation, README, API docs, architecture docs
+9. ALWAYS include a final Review step (model: glm-5) auditing ALL modified files.
+10. ALWAYS include a final Documentation step (model: kimi-k2.6) updating README and API docs.
+11. For NEW projects, include a system design step (model: deepseek-v4-pro) early in the plan.
 
 OUTPUT FORMAT (STRICT — follow exactly):
 
@@ -223,6 +243,7 @@ OUTPUT FORMAT (STRICT — follow exactly):
 | 1 | Create: auth DTO with Zod validation | \`src/auth/dto/login.dto.ts\` | — | deepseek-v4-flash | 45 |
 | 2 | Modify: auth controller to add validation | \`src/auth/auth.controller.ts\` | #1 | deepseek-v4-flash | 25 |
 | 3 | Review: security audit of auth module | \`src/auth/auth.controller.ts\`, \`src/auth/dto/login.dto.ts\` | #2 | glm-5 | — |
+| 4 | Docs: update API documentation | \`docs/API.md\` | #3 | kimi-k2.6 | — |
 
 ACTION column format: "Create: [what]" or "Modify: [what]" or "Delete: [what]" or "Review: [what]" or "Docs: [what]"
 
@@ -230,7 +251,8 @@ FILES column: comma-separated backtick-quoted paths relative to project root.
 
 DEPENDENCIES column: — for none, or #N, #M for step numbers. Use step numbers, not step IDs.
 
-MODEL column: one of: deepseek-v4-pro, deepseek-v4-flash, glm-5, kimi-k2.6
+MODEL column: MUST be one of: deepseek-v4-pro, deepseek-v4-flash, glm-5, kimi-k2.6
+DO NOT use deepseek-v4-flash for EVERY step. Use the model rules above.
 
 EST. LINES column: — for non-code steps, or approximate line count for create/modify steps.
 

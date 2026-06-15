@@ -106,50 +106,75 @@ function classifyAction(action, files = []) {
   const patterns = {
     project_scaffold: [
       "monorepo", "workspace", "initialize package.json", "scaffold root",
-      "root directory", "root monorepo", "root `.gitignore`", "root `.env",
+      "root directory", "root monorepo", "root `.gitignore`", "root `.env`",
       "initialize nestjs project", "initialize next",
       "create root", "add root", "setup root", "bootstrap root",
+      "docker", "compose", "eslint", "prettier", "linting",
+      "cli config", "nest-cli", "nestjs config", "nestjs cli",
+      "root config", "base tsconfig", "tsconfig.base",
+      "init project", "bootstrap project", "create project",
+      "initialize project", "project structure", "project scaffold",
     ],
     system_design: [
       "architecture document", "design document", "system overview",
       "architecture diagram", "module boundaries",
+      "system design", "architectural decision", "adr",
     ],
     database: [
       "prisma", "schema", "database model", "migration",
-      "entity", "relation", "datasource", "generator",
-      "initialize schema", "seed",
+      "create entity", "user entity", "entity with", "entities",
+      "relation", "datasource", "generator", "sql",
+      "initialize schema", "seed", "typeorm", "type orm",
+      "sqlalchemy", "django orm", "mongoose", "mongo",
+      "query builder", "raw query", "database index",
     ],
     backend: [
       "controller", "service", "middleware", "route",
       "endpoint", "api", "nestjs", "express", "fastify",
       "module", "dto", "guard", "pipe", "interceptor",
       "exception filter", "validation", "auth module",
-      "app module", "database config", "configuration module",
+      "app module", "appmodule", "app.module",
+      "root appmodule", "create appmodule",
+      "database config", "configuration module",
       "feature module", "business logic", "crud",
       "create auth", "create user", "implement auth",
+      "install api", "api dependencies", "initialize nestjs", "nestjs api",
+      "initialize api", "scaffold api",
+      "install typeorm", "install prisma", "install driver",
+      "install dependencies", "install package",
+      "fastapi", "django", "flask", "pydantic", "pydantic schema", "api schema",
+      "gin", "chi", "golang", ".net", "asp.net",
+      "spring", "java", "serializer", "viewset",
     ],
     mobile: [
       "expo router", "react native expo", "react-native",
       "navigation", "navigator", "stack navigator",
       "tab navigator", "expo", "mobile", "ios", "android",
+      "flutter", "swift ui", "swiftui", "jetpack compose",
+      "mobile app", "native app", "cross-platform",
     ],
     frontend: [
       "component", "page", "ui component", "style",
       "tailwind", "css", "layout", "spa", "vite",
       "react component", "hook", "context",
-      "next.js page", "client component", "screen",
+      "next.js page", "client component",
+      "vue", "svelte", "angular", "nuxt",
+      "electron", "tauri", "desktop app", "desktop window",
     ],
     review: [
       "review", "audit", "security audit", "code quality",
-      "vulnerability", "performance review",
+      "vulnerability", "performance review", "code review",
     ],
     docs: [
       "documentation", "readme", "api docs", "changelog",
       "architecture decision", "contributing",
+      "swagger", "openapi", "redoc", "docs",
     ],
     testing: [
       "test", "unit test", "integration test", "e2e",
       "jest", "vitest", "pytest", "mock",
+      "rspec", "go test", "selenium", "playwright",
+      "test suite", "test coverage", "spec",
     ],
   };
 
@@ -162,14 +187,23 @@ function classifyAction(action, files = []) {
     }
   }
 
-  if (allFiles.includes("packages/mobile") || allFiles.includes("/mobile/") || allFiles.includes("app.json")) {
-    scores.mobile = (scores.mobile || 0) + 10;
-  }
-  if (allFiles.includes("prisma/schema") || allFiles.includes("migration")) {
-    scores.database = (scores.database || 0) + 5;
-  }
-  if (allFiles.includes("package.json") || allFiles.includes(".gitignore") || allFiles.includes("tsconfig")) {
-    scores.project_scaffold = (scores.project_scaffold || 0) + 3;
+  const hasExplicitType = (scores.review || 0) >= 2 || (scores.docs || 0) >= 2 || (scores.testing || 0) >= 2;
+
+  if (!hasExplicitType) {
+    if (allFiles.includes("/mobile/") || allFiles.startsWith("mobile/") || allFiles.includes("packages/mobile") || allFiles.match(/\/?mobile\//) ||
+        allFiles.includes("/app/") && (allFiles.includes(".apk") || allFiles.includes("android") || allFiles.includes("ios"))) {
+      scores.mobile = (scores.mobile || 0) + 10;
+    }
+    if (allFiles.includes("prisma/schema") || allFiles.includes("migration") || allFiles.includes("/entities/") || allFiles.includes(".entity.") ||
+        allFiles.includes("/models/") || allFiles.match(/\/?models[\/.]/) || allFiles.includes("alembic")) {
+      scores.database = (scores.database || 0) + 5;
+    }
+    if (allFiles.includes("package.json") || allFiles.includes(".gitignore") || allFiles.includes("tsconfig") ||
+        allFiles.includes(".env") || allFiles.includes("docker-compose") || allFiles.includes(".eslint") ||
+        allFiles.includes(".prettier") || allFiles.includes("requirements.txt") || allFiles.includes("pyproject.toml") ||
+        allFiles.includes("go.mod") || allFiles.includes("Makefile") || allFiles.includes("Dockerfile")) {
+      scores.project_scaffold = (scores.project_scaffold || 0) + 3;
+    }
   }
 
   let best = "backend";
